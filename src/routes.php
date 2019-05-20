@@ -4,11 +4,14 @@ use Slim\App;
 use Slim\Http\Request;
 use Slim\Http\Response;
 
+use \Firebase\JWT\JWT;
+
 return function (App $app) {
     $container = $app->getContainer();
 
  	// obtiene todas los usuarios 
     $app->get('/usuarios', function ($request, $response, $args) {
+    	 print_r($request->getAttribute('decoded_token_data'));
         $sth = $this->db->prepare("SELECT * FROM users ORDER BY firstname");
         $sth->execute();
         $todos = $sth->fetchAll();
@@ -33,7 +36,11 @@ return function (App $app) {
         $sth->bindParam("email", $input['email']);
         $sth->bindParam("firstname", $input['firstname']);
         $sth->bindParam("lastname", $input['lastname']);
-        $sth->bindParam("password", $input['password']);
+        
+        //$input['password'] = password_hash($input['password'], PASSWORD_BCRYPT, ['cost' => 12]);      
+        $input['password'] = password_hash($input['password'], PASSWORD_BCRYPT);      
+        $sth->bindParam("password", $input['password']);       
+        
         $sth->execute();
         $input['id'] = $this->db->lastInsertId();
         return $this->response->withJson($input);
@@ -61,7 +68,7 @@ return function (App $app) {
     });
 
     // login
-    $app->post('/login', function ($request, $response) {        
+    $app->post('/logines', function ($request, $response) {        
         $input = $request->getParsedBody();
         $sql = "SELECT * FROM users WHERE email=:email AND password=:password";
         $sth = $this->db->prepare($sql);
@@ -84,6 +91,57 @@ return function (App $app) {
 	            ->withHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization')
 	            ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
 	});
+
+
+	// LOGIN TOKEN
+	$app->post('/login', function (Request $request, Response $response, array $args) {
+ 
+    $input = $request->getParsedBody();    
+    $sql = "SELECT * FROM users WHERE email= :email";
+    $sth = $this->db->prepare($sql);
+    $sth->bindParam("email", $input['email']);          
+    $sth->execute();
+    $user = $sth->fetchObject();
+ 
+    // verify email address.
+    if(!$user) {
+        return $this->response->withJson(['error' => true, 'message' => 'These credentials do not match our records. USE'.$input['password']]);  
+    }
+ 
+    // verify password.
+    if (!password_verify($input['password'],$user->password)) {
+        return $this->response->withJson(['error' => true, 'message' => 'These credentials do not match our records. PAS']);  
+    }
+ 
+    $settings = $this->get('settings'); // get settings array.
+    
+    $token = JWT::encode(['id' => $user->id, 'email' => $user->email], $settings['jwt']['secret'], "HS256");
+ 
+    //return $this->response->withJson(['token' => $token]);
+    return $this->response->withJson(['id' => $user->id, 'ok' => true, 'usuario'=>$user, 'token' => $token, 'email'=> $user->email]);
+ 
+	});
+	// FIN LOGIN TOKEN
+
+	//RUTA CON CON MIDDLEWARE
+	$app->group('/api2', function(\Slim\App $app) {
+ 
+	    $app->get('/user',function(Request $request, Response $response, array $args) {
+	        //print_r($request->getAttribute('decoded_token_data'));
+	        print_r($request->getAttribute('decoded_token_data'));
+	 
+	        /*output 
+	        stdClass Object
+	            (
+	                [id] => 2
+	                [email] => arjunphp@gmail.com
+	            )
+	                    
+	        */
+	    });
+   
+	});
+	// FIN RUTA MIDRLE
 
 
 
